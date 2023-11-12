@@ -1,14 +1,14 @@
 ---
 
 - name: Remote PostgreSQL setup
-  hosts: "db-servers"
+  hosts: "db_servers"
   become: yes
   vars_files:
     - secrets.yml
   
   tasks:
 
-    - name: update aptitude cache && update aptitude
+    - name: apt update cache && apt upgrade 
       ansible.builtin.apt:
         update_cache: yes
         upgrade: full
@@ -32,15 +32,25 @@
       ansible.builtin.pip:
         name: psycopg2
 
-    - name: allow all IP's to connect
+    - name: edit postgresql.conf
       ansible.builtin.lineinfile:
         path: /etc/postgresql/14/main/postgresql.conf
+        regexp: '^#listen_addresses = '
         line: listen_addresses = '*'
-    
-    - name: allow 
-      ansible.builtin.lineinfile:
+        
+    - name: edit pg_hba.conf IPv4
+      ansible.builtin.blockinfile:
         path: /etc/postgresql/14/main/pg_hba.conf
-        line: "#IPv4 Addresses\nhost\tall\tall\t0.0.0.0/0\tmd5\n#IPv6 Addresses\nhost\tall\tall\t::0/0\tmd5"
+        marker: "# IPv4 Addresses - Ansible Block - {mark} " 
+        block: |
+          host  all all 0.0.0.0/0 md5
+
+    - name: edit pg_hba.conf IPv6
+      ansible.builtin.blockinfile:
+        path: /etc/postgresql/14/main/pg_hba.conf
+        marker: "# IPv6 Addresses - Ansible Block - {mark} " 
+        block: |
+          host	all	all	::0/0	md5
 
     - name: change default user password
       become_method: sudo
@@ -50,3 +60,9 @@
         password: "{{ password }}"
       environment:
         PGOPTIONS: "-c password_encryption=scram-sha-256"
+
+    - name: restart posgresql
+      ansible.builtin.systemd:
+        state: restarted
+        daemon_reload: true
+        name: postgresql
